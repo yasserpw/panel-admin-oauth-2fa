@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const app = express();
 
+// ✅ CORS Configuration
 const corsOptions = {
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
@@ -21,203 +22,113 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
 
 // Configuración - Soporta localhost y producción
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
-const REDIRECT_URI = `${BACKEND_URL}/auth/google/callback`;
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
-console.log(`🌍 Environment: ${NODE_ENV}`);
-console.log(`🎯 Frontend URL: ${FRONTEND_URL}`);
-console.log(`🎯 Backend URL: ${BACKEND_URL}`);
-console.log(`🎯 Redirect URI: ${REDIRECT_URI}`);
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USER_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
-// Almacenamiento global
-const users = new Map();
-const oauthStates = new Map();
-
-// Middleware
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-
-// ============================================
-// RUTAS OAUTH
-// ============================================
-
-// 1. Iniciar login
-app.get('/api/auth/login', (req, res) => {
-  const state = Math.random().toString(36).substring(7);
-  oauthStates.set(state, Date.now());
-
-  const params = querystring.stringify({
+// ✅ RUTA CRÍTICA: /auth/google (obtiene la URL de Google)
+app.get('/auth/google', (req, res) => {
+  const authUrl = GOOGLE_AUTH_URL + '?' + querystring.stringify({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: `${BACKEND_URL}/auth/google/callback`,
     response_type: 'code',
-    scope: 'openid email profile',
-    state: state,
-    access_type: 'offline'
+    scope: 'profile email',
+    access_type: 'offline',
+    prompt: 'consent'
   });
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   res.json({ authUrl });
 });
 
-// 2. Callback de Google
+// ✅ RUTA: /auth/google/callback (recibe el código de Google)
 app.get('/auth/google/callback', async (req, res) => {
-  const { code, state } = req.query;
-
-  if (!oauthStates.has(state)) {
-    return res.status(400).send('Estado inválido');
-  }
-
-  oauthStates.delete(state);
+  const { code } = req.query;
 
   if (!code) {
-    return res.status(400).send('Código no recibido');
+    return res.status(400).json({ error: 'No authorization code received' });
   }
 
   try {
     // Intercambiar código por token
-    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+    const tokenResponse = await axios.post(GOOGLE_TOKEN_URL, {
       client_id: GOOGLE_CLIENT_ID,
       client_secret: GOOGLE_CLIENT_SECRET,
-      code: code,
-      redirect_uri: REDIRECT_URI,
+      code,
+      redirect_uri: `${BACKEND_URL}/auth/google/callback`,
       grant_type: 'authorization_code'
     });
 
-    const accessToken = tokenResponse.data.access_token;
-    const refreshToken = tokenResponse.data.refresh_token;
+    const { access_token } = tokenResponse.data;
 
-    // Obtener info del usuario
-    const userResponse = await axios.get(
-      'https://openidconnect.googleapis.com/v1/userinfo',
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
+    // Obtener información del usuario
+    const userResponse = await axios.get(GOOGLE_USER_URL, {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
 
-    const googleUser = userResponse.data;
-    const userId = googleUser.sub;
+    const userData = userResponse.data;
 
-    // Guardar usuario
-    if (!users.has(userId)) {
-      users.set(userId, {
-        id: userId,
-        email: googleUser.email,
-        name: googleUser.name,
-        picture: googleUser.picture,
-        createdAt: new Date()
-      });
-    }
-
-    // ✅ GUARDAR TOKEN EN COOKIE - Esto es lo IMPORTANTE para producción
-    res.cookie('accessToken', accessToken, {
+    // Guardar token en cookie
+    res.cookie('access_token', access_token, {
       httpOnly: true,
-      secure: NODE_ENV === 'production',  // HTTPS en producción
-      sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 3600000,  // 1 hora
-      domain: NODE_ENV === 'production' ? undefined : 'localhost'
-    });
-
-    res.cookie('userId', userId, {
-      secure: NODE_ENV === 'production',
-      sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000,  // 24 horas
-      domain: NODE_ENV === 'production' ? undefined : 'localhost'
-    });
-
-    // ✅ GUARDAR TOKEN EN SESIÓN TAMBIÉN
-    res.cookie('sessionToken', JSON.stringify({
-      userId: userId,
-      accessToken: accessToken,
-      createdAt: new Date().toISOString()
-    }), {
-      httpOnly: false,  // Accessible desde JS si es necesario
-      secure: NODE_ENV === 'production',
-      sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000
     });
 
-    // Redirigir al dashboard
-    const redirectUrl = `${FRONTEND_URL}/dashboard?token=${accessToken}&userId=${userId}`;
-    console.log(`✅ Usuario autenticado: ${googleUser.email}`);
-    res.redirect(redirectUrl);
+    // Redirigir al dashboard con userData
+    const dashboardUrl = `${FRONTEND_URL}/dashboard.html?user=${encodeURIComponent(JSON.stringify(userData))}`;
+    res.redirect(dashboardUrl);
 
   } catch (error) {
-    console.error('❌ Error OAuth:', error.message);
-    res.redirect(`${FRONTEND_URL}/?error=auth_failed`);
+    console.error('Error during OAuth callback:', error.message);
+    res.status(500).json({ error: 'Authentication failed', details: error.message });
   }
 });
 
-// ============================================
-// RUTAS PROTEGIDAS
-// ============================================
+// ✅ RUTA: /profile (obtener perfil del usuario)
+app.get('/profile', (req, res) => {
+  const token = req.cookies.access_token;
 
-// Verificar sesión
-app.get('/api/auth/me', (req, res) => {
-  const userId = req.cookies.userId;
-  
-  if (!userId || !users.has(userId)) {
-    return res.status(401).json({ error: 'No autenticado' });
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const user = users.get(userId);
-  res.json({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    picture: user.picture,
-    authenticated: true
-  });
+  res.json({ message: 'User is authenticated', token });
 });
 
-// Logout
-app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('accessToken');
-  res.clearCookie('userId');
-  res.clearCookie('sessionToken');
-  res.json({ message: 'Sesión cerrada' });
+// ✅ RUTA: /logout
+app.post('/logout', (req, res) => {
+  res.clearCookie('access_token');
+  res.json({ message: 'Logged out successfully' });
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK',
-    environment: NODE_ENV,
-    timestamp: new Date().toISOString()
-  });
+app.get('/', (req, res) => {
+  res.json({ message: 'Backend running', environment: process.env.NODE_ENV });
 });
 
-// ============================================
-// RUTAS DE PRUEBA
-// ============================================
-
-app.get('/api/users', (req, res) => {
-  const usersList = Array.from(users.values()).map(u => ({
-    id: u.id,
-    email: u.email,
-    name: u.name,
-    createdAt: u.createdAt
-  }));
-  res.json(usersList);
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
-// ============================================
-// INICIAR SERVIDOR
-// ============================================
-
+// Puerto
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`\n✅ ========================================`);
-  console.log(`🚀 Backend ejecutándose en puerto ${PORT}`);
-  console.log(`✅ ========================================\n`);
+  console.log(`\n${'='.repeat(40)}`);
+  console.log('✅ Backend ejecutándose en puerto', PORT);
+  console.log(`Frontend URL: ${FRONTEND_URL}`);
+  console.log(`Backend URL: ${BACKEND_URL}`);
+  console.log(`Redirect URI: ${BACKEND_URL}/auth/google/callback`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`${'='.repeat(40)}\n`);
 });
