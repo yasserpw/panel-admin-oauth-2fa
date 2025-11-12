@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .user-info img {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 3px solid #667eea;
+    }
+    h2 {
+      color: #333;
+      margin: 0;
+    }
+    .email {
+      color: #666;
+      font-size: 14px;
+    }
+    button {
+      background: #d32f2f;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #b71c1c;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f9f9f9;
+      border-left: 4px solid #667eea;
+      border-radius: 5px;
+    }
+    .loading {
+      text-align: center;
+      color: #667eea;
+    }
+    .error {
+      color: #d32f2f;
+      padding: 15px;
+      background: #ffebee;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="user-info">
+        <img id="userPic" src="" alt="Foto">
+        <div>
+          <h2 id="userName">Cargando...</h2>
+          <p class="email" id="userEmail"></p>
+        </div>
+      </div>
+      <button onclick="handleLogout()">🚪 Cerrar sesión</button>
+    </div>
+
+    <div id="loading" class="loading" style="display:none;">Cargando perfil...</div>
+    <div id="error" class="error" style="display:none;"></div>
+
+    <div class="section">
+      <h3>✓ Autenticación Exitosa</h3>
+      <p>Has iniciado sesión correctamente con OAuth 2.0 de Google.</p>
+    </div>
+
+    <div class="section">
+      <h3>🔐 Información de Sesión</h3>
+      <p><strong>Token guardado en:</strong> Cookie HttpOnly + LocalStorage</p>
+      <p><strong>Duración:</strong> 24 horas</p>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND_URL = 'http://localhost:5000';
+
+    async function loadUserProfile() {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          window.location.href = '/';
+          return;
+        }
+
+        const user = await response.json();
+        
+        document.getElementById('userName').textContent = `¡Bienvenido, ${user.name}!`;
+        document.getElementById('userEmail').textContent = user.email;
+        document.getElementById('userPic').src = user.picture;
+        document.getElementById('loading').style.display = 'none';
+
+      } catch (error) {
+        document.getElementById('error').textContent = 'Error al cargar perfil: ' + error.message;
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch(`${BACKEND_URL}/api/auth/logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+        window.location.href = '/';
+      } catch (error) {
+        alert('Error al cerrar sesión: ' + error.message);
+      }
+    }
+
+    // Cargar perfil al abrir página
+    loadUserProfile();
+  </script>
+</body>
+</html>

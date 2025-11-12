@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login OAuth 2.0</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      background: white;
+      padding: 50px;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px 40px;
+      text-decoration: none;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .btn:hover {
+      transform: scale(1.05);
+    }
+    .error {
+      color: #d32f2f;
+      margin-bottom: 20px;
+      padding: 15px;
+      background: #ffebee;
+      border-radius: 5px;
+    }
+    .loading {
+      display: none;
+      color: #667eea;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Login Seguro</h1>
+    <p class="subtitle">Inicia sesión con tu cuenta de Google</p>
+    
+    <div id="error" class="error" style="display:none;"></div>
+    <div id="loading" class="loading">Cargando...</div>
+    
+    <button id="loginBtn" class="btn" onclick="handleLogin()">
+      🚀 Iniciar sesión con Google
+    </button>
+  </div>
+
+  <script>
+    const BACKEND_URL = 'http://localhost:5000';
+
+    async function handleLogin() {
+      try {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loginBtn').disabled = true;
+
+        const response = await fetch(`${BACKEND_URL}/api/auth/login`);
+        const data = await response.json();
+
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        }
+      } catch (error) {
+        showError('Error al iniciar sesión: ' + error.message);
+      }
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('loginBtn').disabled = false;
+    }
+
+    // Verificar si hay error en URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error')) {
+      showError('Error en la autenticación');
+    }
+  </script>
+</body>
+</html>

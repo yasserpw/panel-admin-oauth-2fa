@@ -1,0 +1,17 @@
+# Secretos
+backend/.env
+frontend/.env.local
+
+# Node
+backend/node_modules/
+backend/package-lock.json
+
+# Sistema
+.DS_Store
+*.log
+.vscode/
+.env*
+
+# Compilación
+dist/
+build/
